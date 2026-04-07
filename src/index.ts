@@ -10,6 +10,8 @@ import { ContentModel } from "./model/Content";
 app.use(express.json());
 import { authMiddleware } from './middlewares/authMiddleware';
 import { LinkModel } from "./model/Link"
+import cors from "cors";
+app.use(cors());
 
 const USER_JWT_SECRET = process.env.USER_JWT_SECRET as string;
 connectDB();
@@ -79,7 +81,7 @@ app.post("/api/v1/signin", async function (req, res) {
 
 
 app.post("/api/v1/content", authMiddleware, async function (req, res) {
-    const { type, link, title, tags } = req.body;
+    const { contentType, link, title, tags } = req.body;
 
     if (!req.userId) {
         return res.status(403).json({
@@ -96,7 +98,7 @@ app.post("/api/v1/content", authMiddleware, async function (req, res) {
     }
 
     const content = await ContentModel.create({
-        type,
+        contentType,
         link,
         title,
         tags,
@@ -157,31 +159,38 @@ app.post("/api/v1/brain/share", authMiddleware, async function (req, res) {
 
         return ans;
     }
-    const existingLink = await LinkModel.findOne({
-        userId: req.userId
-    });
+    const { share } = req.body;
+    if (share) {
+        const existingLink = await LinkModel.findOne({
+            userId: req.userId
+        });
 
-    if (existingLink) {
+        if (existingLink) {
+            return res.status(200).json({
+                link: `/api/v1/brain/${existingLink.hash}`
+            });
+        }
+
+        const hash = random(10);
+
+        await LinkModel.create({
+            userId: req.userId,
+            hash: hash
+        });
+
         return res.status(200).json({
-            link: `/api/v1/brain/${existingLink.hash}`
+            link: `/api/v1/brain/${hash}`
         });
     }
-
-    const hash = random(10);
-
-    await LinkModel.create({
-        userId: req.userId,
-        hash: hash
-    });
-
-    return res.status(200).json({
-        link: `/api/v1/brain/${hash}`
-    });
-
+    else {
+        // Remove the shareable link if share is false.
+        await LinkModel.deleteOne({ userId: req.userId });
+        res.json({ message: "Removed link" }); // Send success response.
+    }
 });
 
 app.get("/api/v1/brain/:shareLink", async function (req, res) {
-    
+
     const link = req.params.shareLink;
 
     const existingLink = await LinkModel.findOne({
@@ -197,10 +206,10 @@ app.get("/api/v1/brain/:shareLink", async function (req, res) {
         message: "Content displayed successfully",
         username,
         content
-        
+
     })
 
-    
+
 });
 
 

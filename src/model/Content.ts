@@ -1,14 +1,16 @@
 import mongoose = require("mongoose");
 
+
+
 const Content = new mongoose.Schema({
     link: String,
-    type: {
+    contentType: {        
         type: String,
-        enum: ["tweet", "video", "document", "link", "tag"],
+        enum: ["twitter" , "youtube"],
         required: true
     },
     title: String,
     tags: [String],
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 })
-export const ContentModel = mongoose.model("Content",Content); 
+export const ContentModel = mongoose.model("Content", Content); 
