@@ -38,7 +38,7 @@ justify-center items-center">
         <div className="bg-white rounded border min-w-48 p-8">
             <Input ref={usernameRef} placeholder="Username" />
             <Input ref={passwordRef} placeholder="Password" type="password" />
-            {error && <p className="text-sm text-red-600 px-2 pt-2">{error}</p>}
+            {error && <p className="text-sm text-red-500 px-2 pt-2">{error}</p>}
             <div className="flex justify-center pt-4 ">
                 <Button onClick={signup} variant="primary" text="Signup" />
             </div>

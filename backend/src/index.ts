@@ -104,7 +104,7 @@ app.post("/api/v1/content", authMiddleware, async function (req, res) {
     const safeParse = requireBody.safeParse(req.body);
 
     if (!safeParse.success) {
-        return res.status(400).json({
+        return res.status(401).json({
             message: "Incorrect format",
             error: safeParse.error
         });
