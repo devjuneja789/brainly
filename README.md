@@ -2,10 +2,6 @@
 
 AI-powered second brain app.
 
-## Project Notes
-
-https://petal-estimate-4e9.notion.site/Building-a-second-brain-app-1407dfd1073580c19ac3cbe9afa9ac27
-
 ## RAG setup
 
 The app keeps user/content records in MongoDB and stores searchable knowledge chunks in Postgres with pgvector.
