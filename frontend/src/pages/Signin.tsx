@@ -26,7 +26,7 @@ justify-center items-center">
 
         <div className="bg-white rounded border min-w-48 p-8">
             <Input ref={usernameRef} placeholder="Username" />
-            <Input ref={passwordRef} placeholder="Password" />
+            <Input ref={passwordRef} placeholder="Password" type="password" />
             <div className="flex justify-center pt-4 ">
                 <Button  onClick={signin} variant="primary" text="Signin" />
             </div>

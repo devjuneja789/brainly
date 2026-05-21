@@ -11,10 +11,15 @@ app.use(express.json());
 import { authMiddleware } from './middlewares/authMiddleware';
 import { LinkModel } from "./model/Link"
 import cors from "cors";
+import { AiServiceError, answerFromContext } from './services/ai';
+import { deleteContentEmbeddings, initVectorStore, searchUserKnowledge, upsertContentEmbeddings } from './services/vectorStore';
 app.use(cors());
 
 const USER_JWT_SECRET = process.env.USER_JWT_SECRET as string;
 connectDB();
+initVectorStore().catch((error) => {
+    console.error("Vector store setup failed:", error.message);
+});
 console.log(process.env.MONGO_URL);
 
 app.use((req, res, next) => {
@@ -25,26 +30,34 @@ app.use((req, res, next) => {
 app.post("/api/v1/signup", async function (req, res) {
 
     const requireBody = z.object({   // input validation
-        username: z.string().min(3).max(10),
-        password: z.string().regex(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/)
+        username: z.string().min(3).max(30),
+        password: z.string().min(8)
     })
     const safeParse = requireBody.safeParse(req.body);
 
     if (!safeParse.success) {
-        res.json({
-            message: "Incorrect Format",
+        res.status(400).json({
+            message: "Username must be 3-30 characters and password must be at least 8 characters.",
             error: safeParse.error
         })
         return // return to stop the function
     }
-    const { username, password } = req.body;
+    const { username, password } = safeParse.data;
+    const existingUser = await UsersModel.findOne({ username });
+
+    if (existingUser) {
+        res.status(409).json({
+            message: "Username already exists"
+        });
+        return;
+    }
+
     const hashedPassword = await bcrypt.hash(password, 5);
-    console.log(hashedPassword);
     await UsersModel.create({
         username: username,
         password: hashedPassword
     })
-    res.json({
+    res.status(201).json({
         message: "You are signed up as user"
     })
 
@@ -81,7 +94,23 @@ app.post("/api/v1/signin", async function (req, res) {
 
 
 app.post("/api/v1/content", authMiddleware, async function (req, res) {
-    const { contentType, link, title, tags } = req.body;
+    const requireBody = z.object({
+        contentType: z.enum(["twitter", "youtube", "note", "link"]),
+        link: z.string().url().optional().or(z.literal("")),
+        title: z.string().min(1),
+        body: z.string().optional(),
+        tags: z.array(z.string()).optional()
+    });
+    const safeParse = requireBody.safeParse(req.body);
+
+    if (!safeParse.success) {
+        return res.status(400).json({
+            message: "Incorrect format",
+            error: safeParse.error
+        });
+    }
+
+    const { contentType, link, title, body, tags } = safeParse.data;
 
     if (!req.userId) {
         return res.status(403).json({
@@ -100,10 +129,18 @@ app.post("/api/v1/content", authMiddleware, async function (req, res) {
     const content = await ContentModel.create({
         contentType,
         link,
+        body,
         title,
         tags,
         userId: user._id
     });
+
+    try {
+        await upsertContentEmbeddings(content);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown indexing error";
+        console.warn(`Content saved, but AI indexing was skipped: ${message}`);
+    }
 
     res.status(201).json({
         message: "Content added successfully",
@@ -132,10 +169,11 @@ app.get("/api/v1/content", authMiddleware, async function (req, res) {
 });
 
 app.delete("/api/v1/content", authMiddleware, async function (req, res) {
+    const contentId = req.body.contentId;
+    const deleteQuery = contentId ? { _id: contentId, userId: req.userId } : { userId: req.userId };
 
-    const result = await ContentModel.deleteOne({
-        userId: req.userId
-    });
+    const deletedContent = await ContentModel.findOne(deleteQuery);
+    const result = await ContentModel.deleteOne(deleteQuery);
 
     if (result.deletedCount === 0) {
         return res.status(404).json({
@@ -143,9 +181,85 @@ app.delete("/api/v1/content", authMiddleware, async function (req, res) {
         });
     }
 
+    if (deletedContent) {
+        try {
+            await deleteContentEmbeddings(deletedContent._id.toString());
+        } catch (error) {
+            console.error("Content embedding delete failed:", error);
+        }
+    }
+
     res.status(200).json({
         message: "One content deleted successfully"
     });
+});
+
+app.post("/api/v1/content/:id/reindex", authMiddleware, async function (req, res) {
+    const content = await ContentModel.findOne({
+        _id: req.params.id,
+        userId: req.userId
+    });
+
+    if (!content) {
+        return res.status(404).json({
+            message: "Content not found"
+        });
+    }
+
+    try {
+        await upsertContentEmbeddings(content);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to index content";
+        return res.status(error instanceof AiServiceError ? error.statusCode : 500).json({
+            message
+        });
+    }
+
+    res.status(200).json({
+        message: "Content indexed successfully"
+    });
+});
+
+app.post("/api/v1/brain/chat", authMiddleware, async function (req, res) {
+    const requireBody = z.object({
+        question: z.string().min(1).max(1000)
+    });
+    const safeParse = requireBody.safeParse(req.body);
+
+    if (!safeParse.success) {
+        return res.status(400).json({
+            message: "Question is required",
+            error: safeParse.error
+        });
+    }
+
+    if (!req.userId) {
+        return res.status(403).json({
+            message: "Unauthorized"
+        });
+    }
+
+    try {
+        const matches = await searchUserKnowledge(req.userId, safeParse.data.question);
+        const answer = await answerFromContext(safeParse.data.question, matches);
+
+        res.status(200).json({
+            answer,
+            sources: matches.map(({ title, link, contentId, similarity }) => ({
+                title,
+                link,
+                contentId,
+                similarity
+            }))
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to answer right now";
+        const statusCode = error instanceof AiServiceError ? error.statusCode : 500;
+
+        res.status(statusCode).json({
+            message
+        });
+    }
 });
 
 app.post("/api/v1/brain/share", authMiddleware, async function (req, res) {

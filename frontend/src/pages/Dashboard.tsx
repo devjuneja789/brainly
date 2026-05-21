@@ -9,6 +9,7 @@ import { Sidebar } from "../components/Sidebar";
 import { useContent } from "../hooks/useContent";
 import axios from "axios";
 import { Backend_Url } from "../config";
+import { BrainChat } from "../components/BrainChat";
 
 
 function Dashboard() {
@@ -34,8 +35,9 @@ function Dashboard() {
                         alert(shareUrl);
                     }} startIcon={<ShareIcon size="lg" />} variant="secondary" text="Share Brain" />
                 </div>
-                <div className="flex gap-4">
-                    {contents.map(({ contentType, link, title }) => <Card title={title} contentType={contentType} link={link} />)}
+                <BrainChat />
+                <div className="flex gap-4 flex-wrap">
+                    {contents.map(({ contentType, link, title, body, _id }) => <Card key={_id} title={title} contentType={contentType} link={link} body={body} />)}
                     {/* <Card title="Bimal Elaichi" type="twitter" link="https://x.com/giffmana/status/2038694526370345081?s=20" />
                     <Card title="Bimal Elaichi" type="youtube" link="https://www.youtube.com/watch?v=YwtvQ23_-34" /> */}
                 </div>

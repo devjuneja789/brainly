@@ -1,9 +1,10 @@
 export interface Inputprops {
     placeholder: string, 
     ref?: any;
+    type?: string;
 }
 
 
 export const Input = (props: Inputprops) => {
-    return <div><input ref={props.ref} className ="px-4 py-2 border rounded m-2" type="text" placeholder={props.placeholder}></input></div>
+    return <div><input ref={props.ref} className ="px-4 py-2 border rounded m-2" type={props.type || "text"} placeholder={props.placeholder}></input></div>
 }
